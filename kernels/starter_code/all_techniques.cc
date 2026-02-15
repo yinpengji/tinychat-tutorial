@@ -18,6 +18,11 @@ struct w4a8_thread_args {
     int start_j, end_j;
     const struct matmul_params *params;
 };
+
+#ifdef QM_ARM
+const uint8x16_t mask_low4bit = vdupq_n_u8(0xf);
+const int8x16_t offsets = vdupq_n_s8(8);
+#endif
 static void *all_techniques_worker_func(void *args) {
     struct w4a8_thread_args *mat_args = (struct w4a8_thread_args *)args;
     const struct matmul_params *params = mat_args->params;
@@ -38,9 +43,9 @@ static void *all_techniques_worker_func(void *args) {
             //            low|----------------------------------------------------------|high
             //               0                         128 bit                         127
             float32x4_t sumv0 = vdupq_n_f32(0.0f);
-            float32x4_t sumv1 = vdupq_n_f32(0.0f);
-            float32x4_t sumv2 = vdupq_n_f32(0.0f);
-            float32x4_t sumv3 = vdupq_n_f32(0.0f);
+            //float32x4_t sumv1 = vdupq_n_f32(0.0f);
+            //float32x4_t sumv2 = vdupq_n_f32(0.0f);
+            //float32x4_t sumv3 = vdupq_n_f32(0.0f);
             // pointer of the int4 weights
             const unsigned char *w_start = &params->B.int4_data_ptr[col * k / 2];
             // pointer of the int8 activation
@@ -65,11 +70,26 @@ static void *all_techniques_worker_func(void *args) {
                 // (2) use `vshrq_n_u8` to right shift 4 bits and get the upper half
                 // (3) use `vreinterpretq_s8_u8` to interpret the  vector as int8
                 // lowbit mask
-                const uint8x16_t mask_low4bit = vdupq_n_u8(0xf);
-
+                
+                const int8x16_t w0_low = vreinterpretq_s8_u8(vandq_u8(w0, mask_low4bit));
+                const int8x16_t w0_high = vreinterpretq_s8_u8(vshrq_n_u8(w0, 4));
+                const int8x16_t w1_low = vreinterpretq_s8_u8(vandq_u8(w1, mask_low4bit));
+                const int8x16_t w1_high = vreinterpretq_s8_u8(vshrq_n_u8(w1, 4));
+                const int8x16_t w2_low = vreinterpretq_s8_u8(vandq_u8(w2, mask_low4bit));
+                const int8x16_t w2_high = vreinterpretq_s8_u8(vshrq_n_u8(w2, 4));
+                const int8x16_t w3_low = vreinterpretq_s8_u8(vandq_u8(w3, mask_low4bit));
+                const int8x16_t w3_high = vreinterpretq_s8_u8(vshrq_n_u8(w3, 4));
                 // TODO: apply zero_point to weights and convert the range from (0, 15) to (-8, 7)
                 // Hint: using `vsubq_s8` to the lower-half and upper-half vectors of weights
-                const int8x16_t offsets = vdupq_n_s8(8);
+                
+                const int8x16_t w0_low_signed = vsubq_s8(w0_low, offsets);
+                const int8x16_t w0_high_signed = vsubq_s8(w0_high, offsets);
+                const int8x16_t w1_low_signed = vsubq_s8(w1_low, offsets);
+                const int8x16_t w1_high_signed = vsubq_s8(w1_high, offsets);
+                const int8x16_t w2_low_signed = vsubq_s8(w2_low, offsets);
+                const int8x16_t w2_high_signed = vsubq_s8(w2_high, offsets);
+                const int8x16_t w3_low_signed = vsubq_s8(w3_low, offsets);
+                const int8x16_t w3_high_signed = vsubq_s8(w3_high, offsets);
 
                 // load 128 8-bit activation
                 const int8x16_t a0 = vld1q_s8(a_start);
@@ -85,7 +105,14 @@ static void *all_techniques_worker_func(void *args) {
                 // TODO: perform dot product and store the result into the intermediate sum, int_sum0
                 // Hint: use `vdotq_s32` and store the sum for each block in int_sum{0-3}
                 int32x4_t int_sum0, int_sum1, int_sum2, int_sum3;
-
+                int_sum0 = vdotq_s32(vdupq_n_s32(0), w0_low_signed, a0);
+                int_sum0 = vdotq_s32(int_sum0, w0_high_signed, a1);
+                int_sum1 = vdotq_s32(vdupq_n_s32(0), w1_low_signed, a2);
+                int_sum1 = vdotq_s32(int_sum1, w1_high_signed, a3);
+                int_sum2 = vdotq_s32(vdupq_n_s32(0), w2_low_signed, a4);
+                int_sum2 = vdotq_s32(int_sum2, w2_high_signed, a5);
+                int_sum3 = vdotq_s32(vdupq_n_s32(0), w3_low_signed, a6);
+                int_sum3 = vdotq_s32(int_sum3, w3_high_signed, a7);
                 float s_0 = *s_a++ * *s_w++;
                 float s_1 = *s_a++ * *s_w++;
                 float s_2 = *s_a++ * *s_w++;

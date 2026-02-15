@@ -26,6 +26,13 @@ else ifeq ($(shell uname -p),arm)
 	CXXFLAGS += -march=native -DQM_ARM -fPIC -march=armv8.2-a+dotprod
 	INCLUDE_DIRS += -I/opt/homebrew/opt/boost/include
 	LIB_SRC += $(wildcard $(LIB_DIR)/neon/*.cc)
+
+else ifeq ($(shell uname -p),aarch64)
+	CXXFLAGS += -O3 -march=native -DQM_ARM -fPIC -march=armv8.2-a+dotprod
+        LIB_SRC += $(wildcard $(LIB_DIR)/neon/*.cc)
+
+
+
 else
 	@echo "Device unsupported!.
 	LIB_REF_SRC = $(wildcard $(LIB_DIR)/ref/*.cc)
